@@ -1,7 +1,7 @@
 # using namespace std;
 
-from flask import Flask, request, jsonify, send_file, make_response
-from flask_cors import CORS
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS # المكتبة دي اللي هتحل المشكلة
 import yt_dlp
 import os
 import threading
@@ -10,18 +10,10 @@ import uuid
 import re
 
 app = Flask(__name__)
-# فتحنا الـ CORS لكل حاجة عشان المتصفح ميقفلش الاتصال
+# السطر ده بيفتح الباب للاتصالات الخارجية من أي مكان
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# الحل السحري اللي بيطمن المتصفح في أي عملية طلب
-@app.after_request
-def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    return response
-
-# قاموس هنحفظ فيه حالة كل تحميل ونسبته المئوية
+# قاموس حفظ حالة التحميل
 download_tasks = {}
 
 def delete_file_after_delay(filepath):
@@ -32,12 +24,14 @@ def delete_file_after_delay(filepath):
     except:
         pass
 
-# ضفنا كلمة OPTIONS للمسار ده
-@app.route('/info', methods=['POST', 'OPTIONS'])
+# الصفحة الرئيسية للتأكد من عمل السيرفر
+@app.route('/', methods=['GET'])
+def home():
+    return "سيرفر برو داونلودر شغال 100% 🚀"
+
+# دالة جلب المعلومات
+@app.route('/info', methods=['POST'])
 def get_info():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-        
     data = request.json
     url = data.get('url')
     if not url: return jsonify({"error": "هات الرابط"}), 400
@@ -119,11 +113,10 @@ def get_info():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# دالة بتشتغل في الخلفية عشان تحمل وتحدث النسبة
+# دالة التحميل الخلفي
 def background_download(task_id, url, format_id):
     def progress_hook(d):
         if d['status'] == 'downloading':
-            # تنظيف النسبة المئوية من أي علامات أو أكواد ألوان
             p_str = d.get('_percent_str', '0%').replace('%', '')
             p_str = re.sub(r'\x1b\[[0-9;]*m', '', p_str).strip()
             try:
@@ -144,12 +137,9 @@ def background_download(task_id, url, format_id):
     except Exception as e:
         download_tasks[task_id]['status'] = 'error'
 
-# مسار جديد عشان يبدأ التحميل ويدينا رقم للعملية (ID)
-@app.route('/start_download', methods=['POST', 'OPTIONS'])
+# بدء التحميل
+@app.route('/start_download', methods=['POST'])
 def start_download():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-        
     data = request.json
     url = data.get('url')
     format_id = data.get('format', 'best')
@@ -161,23 +151,17 @@ def start_download():
     threading.Thread(target=background_download, args=(task_id, url, format_id)).start()
     return jsonify({"task_id": task_id})
 
-# مسار عشان فلاتر يسأل منه: "وصلنا كام في المية؟"
-@app.route('/progress', methods=['GET', 'OPTIONS'])
+# متابعة النسبة
+@app.route('/progress', methods=['GET'])
 def get_progress():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-        
     task_id = request.args.get('task_id')
     task = download_tasks.get(task_id)
     if not task: return jsonify({"error": "غير موجود"}), 404
     return jsonify(task)
 
-# مسار عشان يسحب الملف الفعلي لما يوصل 100%
-@app.route('/get_file', methods=['GET', 'OPTIONS'])
+# سحب الملف
+@app.route('/get_file', methods=['GET'])
 def get_file():
-    if request.method == 'OPTIONS':
-        return jsonify({'status': 'ok'}), 200
-        
     task_id = request.args.get('task_id')
     task = download_tasks.get(task_id)
     if task and task['status'] == 'completed':
