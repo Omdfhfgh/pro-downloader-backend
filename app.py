@@ -1,7 +1,7 @@
 # using namespace std;
 
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS # المكتبة دي اللي هتحل المشكلة
+from flask import Flask, request, jsonify, send_file, make_response
+from flask_cors import CORS
 import yt_dlp
 import os
 import threading
@@ -10,10 +10,17 @@ import uuid
 import re
 
 app = Flask(__name__)
-# السطر ده بيفتح الباب للاتصالات الخارجية من أي مكان
+# فتحنا الباب على مصراعيه لكل المواقع
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# قاموس حفظ حالة التحميل
+# الحل السحري اللي بيرد على المتصفح ويطمنه
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
 download_tasks = {}
 
 def delete_file_after_delay(filepath):
@@ -24,14 +31,17 @@ def delete_file_after_delay(filepath):
     except:
         pass
 
-# الصفحة الرئيسية للتأكد من عمل السيرفر
-@app.route('/', methods=['GET'])
+# ضفنا الـ OPTIONS لكل المسارات اهو عشان المتصفح ميزعلش
+@app.route('/', methods=['GET', 'OPTIONS'])
 def home():
+    if request.method == 'OPTIONS': return jsonify({'status': 'ok'}), 200
     return "سيرفر برو داونلودر شغال 100% 🚀"
 
-# دالة جلب المعلومات
-@app.route('/info', methods=['POST'])
+@app.route('/info', methods=['POST', 'OPTIONS'])
 def get_info():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+        
     data = request.json
     url = data.get('url')
     if not url: return jsonify({"error": "هات الرابط"}), 400
@@ -113,7 +123,6 @@ def get_info():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# دالة التحميل الخلفي
 def background_download(task_id, url, format_id):
     def progress_hook(d):
         if d['status'] == 'downloading':
@@ -137,9 +146,11 @@ def background_download(task_id, url, format_id):
     except Exception as e:
         download_tasks[task_id]['status'] = 'error'
 
-# بدء التحميل
-@app.route('/start_download', methods=['POST'])
+@app.route('/start_download', methods=['POST', 'OPTIONS'])
 def start_download():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+        
     data = request.json
     url = data.get('url')
     format_id = data.get('format', 'best')
@@ -151,17 +162,21 @@ def start_download():
     threading.Thread(target=background_download, args=(task_id, url, format_id)).start()
     return jsonify({"task_id": task_id})
 
-# متابعة النسبة
-@app.route('/progress', methods=['GET'])
+@app.route('/progress', methods=['GET', 'OPTIONS'])
 def get_progress():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+        
     task_id = request.args.get('task_id')
     task = download_tasks.get(task_id)
     if not task: return jsonify({"error": "غير موجود"}), 404
     return jsonify(task)
 
-# سحب الملف
-@app.route('/get_file', methods=['GET'])
+@app.route('/get_file', methods=['GET', 'OPTIONS'])
 def get_file():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+        
     task_id = request.args.get('task_id')
     task = download_tasks.get(task_id)
     if task and task['status'] == 'completed':
@@ -171,4 +186,4 @@ def get_file():
     return jsonify({"error": "لسه مخلصش"}), 400
 
 if __name__ == '__main__':
-    app.run(port=5000)
+    app.run(port=5000, host='0.0.0.0')
